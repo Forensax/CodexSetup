@@ -205,6 +205,8 @@ function Test-NsisScriptContent {
     Assert-Contains $text ([regex]::Escape('WriteRegStr HKLM "Software\Classes\codex" "URL Protocol" ""')) 'NSIS installer must register codex: URL protocol'
     Assert-Contains $text 'WriteUninstaller' 'NSIS installer must generate an uninstaller'
     Assert-Contains $text 'CreateShortCut\s+"\$SMPROGRAMS\\Codex\\Codex\.lnk"' 'NSIS installer must create an all-users Start Menu shortcut'
+    Assert-Contains $text '(?m)^\s*SetCompress\s+off\s*$' 'NSIS installer must disable compression for faster CI builds'
+    Assert-NotContains $text '(?m)^\s*SetCompressor\s+/SOLID\s+lzma\s*$' 'NSIS installer must not use slow solid LZMA compression'
 
     foreach ($extension in @('\.csv', '\.tsv', '\.xls', '\.xlsm', '\.xlsx')) {
         Assert-NotContains $text $extension "NSIS installer must not register spreadsheet file association pattern $extension"
