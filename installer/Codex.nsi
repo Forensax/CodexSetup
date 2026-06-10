@@ -46,12 +46,12 @@ VIAddVersionKey "LegalCopyright" "${APP_PUBLISHER}"
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
-!insertmacro MUI_LANGUAGE "English"
+!insertmacro MUI_LANGUAGE "SimpChinese"
 
 Function .onInit
   SetShellVarContext all
   ${IfNot} ${RunningX64}
-    MessageBox MB_ICONSTOP "Codex requires 64-bit Windows."
+    MessageBox MB_ICONSTOP "Codex 需要 64 位 Windows。"
     Abort
   ${EndIf}
 FunctionEnd

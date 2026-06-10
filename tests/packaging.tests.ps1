@@ -93,6 +93,7 @@ function New-TestMsix {
 
 function Test-RequiredFilesExist {
     $paths = @(
+        'README.md',
         '.gitignore',
         'installer/Codex.nsi',
         'scripts/resolve-msix-url.ps1',
@@ -105,6 +106,21 @@ function Test-RequiredFilesExist {
     foreach ($path in $paths) {
         Assert-True (Test-Path -LiteralPath (Join-RepoPath $path)) "Missing required file: $path"
     }
+}
+
+function Test-ReadmeContent {
+    $path = Join-RepoPath 'README.md'
+    if (-not (Test-Path -LiteralPath $path)) {
+        Add-Failure 'README.md must exist'
+        return
+    }
+
+    $text = Get-Content -LiteralPath $path -Raw -Encoding UTF8
+    Assert-Contains $text '# Codex Windows' 'README must have a project title'
+    Assert-Contains $text '[\u4e00-\u9fff]' 'README must contain Chinese text'
+    Assert-Contains $text '\u6bcf\u5c0f\u65f6|1\s*\u5c0f\u65f6|\u4e00\u5c0f\u65f6' 'README must document the hourly version check'
+    Assert-Contains $text '\u6ca1\u6709\u65b0\u7248\u672c' 'README must document that scheduled runs stop when no new version exists'
+    Assert-Contains $text 'zlib' 'README must document the zlib speed/size compression compromise'
 }
 
 function Test-PreparePayloadScript {
@@ -161,30 +177,46 @@ function Test-ResolveMsixUrlParser {
 
     $scriptText = Get-Content -LiteralPath $script -Raw
     Assert-Contains $scriptText 'function\s+Select-CodexMsixUrl' 'resolve-msix-url must expose Select-CodexMsixUrl for parser testing'
+    Assert-Contains $scriptText '\[switch\]\$Json' 'resolve-msix-url must support -Json output for scheduled version checks'
+    Assert-Contains $scriptText 'function\s+Select-CodexMsixPackage' 'resolve-msix-url must expose Select-CodexMsixPackage for version-aware parsing'
 
     $temp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $temp | Out-Null
     try {
         $harness = Join-Path $temp 'parser-harness.ps1'
         $moduleText = $scriptText -replace '(?s)\$attempts\s*=\s*@\(.+$', ''
-        $fixture = @'
-<table class="tftable">
-  <tr><td><a href="http://dl.delivery.mp.microsoft.com/filestreamingservice/files/blockmap" rel="noreferrer">OpenAI.Codex_26.608.1337.0_x64__2p2nqsd0c76g0.BlockMap</a></td></tr>
-  <tr><td><a href="http://dl.delivery.mp.microsoft.com/filestreamingservice/files/old" rel="noreferrer">OpenAI.Codex_26.607.1200.0_x64__2p2nqsd0c76g0.Msix</a></td></tr>
-  <tr><td><a href="http://dl.delivery.mp.microsoft.com/filestreamingservice/files/latest" rel="noreferrer">OpenAI.Codex_26.608.1337.0_x64__2p2nqsd0c76g0.Msix</a></td></tr>
-  <tr><td><a href="http://dl.delivery.mp.microsoft.com/filestreamingservice/files/arm64" rel="noreferrer">OpenAI.Codex_26.608.1337.0_arm64__2p2nqsd0c76g0.Msix</a></td></tr>
-</table>
-'@
-        @"
-$moduleText
-`$html = @'
-$fixture
-'@
-Select-CodexMsixUrl -Html `$html
-"@ | Set-Content -LiteralPath $harness -Encoding UTF8
+        $fixture = @(
+            '<table class="tftable">'
+            '  <tr><td><a href="http://dl.delivery.mp.microsoft.com/filestreamingservice/files/blockmap" rel="noreferrer">OpenAI.Codex_26.608.1337.0_x64__2p2nqsd0c76g0.BlockMap</a></td></tr>'
+            '  <tr><td><a href="http://dl.delivery.mp.microsoft.com/filestreamingservice/files/old" rel="noreferrer">OpenAI.Codex_26.607.1200.0_x64__2p2nqsd0c76g0.Msix</a></td></tr>'
+            '  <tr><td><a href="http://dl.delivery.mp.microsoft.com/filestreamingservice/files/latest" rel="noreferrer">OpenAI.Codex_26.608.1337.0_x64__2p2nqsd0c76g0.Msix</a></td></tr>'
+            '  <tr><td><a href="http://dl.delivery.mp.microsoft.com/filestreamingservice/files/arm64" rel="noreferrer">OpenAI.Codex_26.608.1337.0_arm64__2p2nqsd0c76g0.Msix</a></td></tr>'
+            '</table>'
+        ) -join [Environment]::NewLine
+        @(
+            $moduleText
+            "`$html = @'"
+            $fixture
+            "'@"
+            'Select-CodexMsixUrl -Html $html'
+        ) | Set-Content -LiteralPath $harness -Encoding UTF8
 
         $selected = & powershell -NoProfile -ExecutionPolicy Bypass -File $harness
         Assert-True ($selected -eq 'http://dl.delivery.mp.microsoft.com/filestreamingservice/files/latest') 'resolve-msix-url must select the latest x64 MSIX href when rg-adguard uses filename as anchor text'
+
+        $jsonHarness = Join-Path $temp 'parser-json-harness.ps1'
+        @(
+            $moduleText
+            "`$html = @'"
+            $fixture
+            "'@"
+            'Select-CodexMsixPackage -Html $html | ConvertTo-Json -Compress'
+        ) | Set-Content -LiteralPath $jsonHarness -Encoding UTF8
+
+        $package = (& powershell -NoProfile -ExecutionPolicy Bypass -File $jsonHarness) | ConvertFrom-Json
+        Assert-True ($package.Url -eq 'http://dl.delivery.mp.microsoft.com/filestreamingservice/files/latest') 'resolve-msix-url JSON package must include the selected URL'
+        Assert-True ($package.Version -eq '26.608.1337.0') 'resolve-msix-url JSON package must include the selected version'
+        Assert-True ($package.FileName -eq 'OpenAI.Codex_26.608.1337.0_x64__2p2nqsd0c76g0.Msix') 'resolve-msix-url JSON package must include the selected file name'
     } finally {
         if (Test-Path -LiteralPath $temp) {
             Remove-Item -LiteralPath $temp -Recurse -Force
@@ -205,6 +237,7 @@ function Test-NsisScriptContent {
     Assert-Contains $text ([regex]::Escape('WriteRegStr HKLM "Software\Classes\codex" "URL Protocol" ""')) 'NSIS installer must register codex: URL protocol'
     Assert-Contains $text 'WriteUninstaller' 'NSIS installer must generate an uninstaller'
     Assert-Contains $text 'CreateShortCut\s+"\$SMPROGRAMS\\Codex\\Codex\.lnk"' 'NSIS installer must create an all-users Start Menu shortcut'
+    Assert-Contains $text '!insertmacro\s+MUI_LANGUAGE\s+"SimpChinese"' 'NSIS installer must use Simplified Chinese UI language'
     Assert-Contains $text '(?m)^\s*SetCompressor\s+zlib\s*$' 'NSIS installer must use zlib as the speed/size compression compromise'
     Assert-NotContains $text '(?m)^\s*SetCompressor\s+/SOLID\s+lzma\s*$' 'NSIS installer must not use slow solid LZMA compression'
     Assert-NotContains $text '(?m)^\s*SetCompress\s+off\s*$' 'NSIS installer must not disable compression when using the speed/size compromise'
@@ -239,7 +272,9 @@ function Test-WorkflowContent {
         return
     }
 
-    $text = Get-Content -LiteralPath $path -Raw
+    $text = Get-Content -LiteralPath $path -Raw -Encoding UTF8
+    Assert-Contains $text 'name:\s*[\u4e00-\u9fff]+ Codex Windows [\u4e00-\u9fff]+' 'release workflow name must be Chinese'
+    Assert-Contains $text 'cron:\s*''0 \* \* \* \*''' 'release workflow must check for Codex updates every hour'
     Assert-Contains $text 'workflow_dispatch:' 'release workflow must support manual workflow_dispatch'
     Assert-Contains $text 'msix_url:' 'release workflow must expose an optional msix_url input'
     Assert-Contains $text 'draft:' 'release workflow must expose a draft input'
@@ -247,11 +282,15 @@ function Test-WorkflowContent {
     Assert-Contains $text 'scripts/build-installer\.ps1' 'release workflow must call scripts/build-installer.ps1'
     Assert-Contains $text 'scripts/test-installer-ci\.ps1' 'release workflow must call scripts/test-installer-ci.ps1'
     Assert-Contains $text 'gh\s+@releaseArgs' 'release workflow must publish assets with gh release create arguments'
+    Assert-Contains $text 'gh\s+release\s+view\s+\$tag' 'release workflow must check whether the resolved version already has a GitHub Release'
+    Assert-Contains $text 'SHOULD_BUILD=false' 'release workflow must stop scheduled runs when no new Codex version is available'
+    Assert-Contains $text 'resolve-msix-url\.ps1[^\r\n]+-Json' 'release workflow must use JSON resolver output for automatic version checks'
     Assert-Contains $text '\$makeNsis\s*=\s*Get-Command\s+makensis\.exe' 'release workflow must resolve makensis.exe before verifying NSIS'
     Assert-NotContains $text '(?m)^\s*makensis\s+/VERSION\s*$' 'release workflow must not call bare makensis /VERSION before PATH updates take effect'
 }
 
 Test-RequiredFilesExist
+Test-ReadmeContent
 Test-PreparePayloadScript
 Test-ResolveMsixUrlParser
 Test-NsisScriptContent

@@ -4,7 +4,8 @@ param(
     [string]$PackageFamilyName = 'OpenAI.Codex_2p2nqsd0c76g0',
     [ValidateSet('Retail', 'RP', 'WIF', 'WIS', 'Fast', 'Slow')]
     [string]$Ring = 'Retail',
-    [string]$Lang = 'en-US'
+    [string]$Lang = 'en-US',
+    [switch]$Json
 )
 
 Set-StrictMode -Version Latest
@@ -36,7 +37,7 @@ function Invoke-RgAdguardRequest {
         -TimeoutSec 60
 }
 
-function Select-CodexMsixUrl {
+function Select-CodexMsixPackage {
     param([Parameter(Mandatory)][string]$Html)
 
     $decoded = [System.Net.WebUtility]::HtmlDecode($Html)
@@ -55,6 +56,7 @@ function Select-CodexMsixUrl {
             [PSCustomObject]@{
                 Url     = $url
                 Version = [version]$versionMatch.Groups['version'].Value
+                FileName = $fileName
             }
         }
     }
@@ -75,6 +77,7 @@ function Select-CodexMsixUrl {
                 [PSCustomObject]@{
                     Url     = $url
                     Version = [version]$versionMatch.Groups['version'].Value
+                    FileName = $unescapedName
                 }
             }
         }
@@ -96,7 +99,21 @@ function Select-CodexMsixUrl {
     if ($null -eq $selected) {
         return $null
     }
-    return $selected.Url
+    return [PSCustomObject]@{
+        Url      = [string]$selected.Url
+        Version  = [string]$selected.Version
+        FileName = [string]$selected.FileName
+    }
+}
+
+function Select-CodexMsixUrl {
+    param([Parameter(Mandatory)][string]$Html)
+
+    $package = Select-CodexMsixPackage -Html $Html
+    if ($null -eq $package) {
+        return $null
+    }
+    return $package.Url
 }
 
 $attempts = @(
@@ -108,9 +125,13 @@ $errors = New-Object System.Collections.Generic.List[string]
 foreach ($attempt in $attempts) {
     try {
         $response = Invoke-RgAdguardRequest -Type $attempt.Type -Value $attempt.Value
-        $url = Select-CodexMsixUrl -Html $response.Content
-        if (-not [string]::IsNullOrWhiteSpace($url)) {
-            Write-Output $url
+        $package = Select-CodexMsixPackage -Html $response.Content
+        if ($null -ne $package -and -not [string]::IsNullOrWhiteSpace($package.Url)) {
+            if ($Json) {
+                $package | ConvertTo-Json -Compress
+            } else {
+                Write-Output $package.Url
+            }
             exit 0
         }
         $errors.Add("$($attempt.Type) returned no matching OpenAI.Codex x64 MSIX link.")
