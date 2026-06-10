@@ -1,0 +1,12 @@
+*.Msix
+*.msix
+*.appx
+*.appxbundle
+*.msixbundle
+
+.build/
+dist/
+source/
+payload/
+*.log
+*.tmp

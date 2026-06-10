@@ -1,0 +1,222 @@
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+$Failures = New-Object System.Collections.Generic.List[string]
+
+function Join-RepoPath {
+    param([Parameter(Mandatory)][string]$Path)
+    return (Join-Path $RepoRoot $Path)
+}
+
+function Add-Failure {
+    param([Parameter(Mandatory)][string]$Message)
+    $script:Failures.Add($Message)
+}
+
+function Assert-True {
+    param(
+        [Parameter(Mandatory)][bool]$Condition,
+        [Parameter(Mandatory)][string]$Message
+    )
+    if (-not $Condition) {
+        Add-Failure $Message
+    }
+}
+
+function Assert-Contains {
+    param(
+        [Parameter(Mandatory)][string]$Text,
+        [Parameter(Mandatory)][string]$Pattern,
+        [Parameter(Mandatory)][string]$Message
+    )
+    if ($Text -notmatch $Pattern) {
+        Add-Failure $Message
+    }
+}
+
+function Assert-NotContains {
+    param(
+        [Parameter(Mandatory)][string]$Text,
+        [Parameter(Mandatory)][string]$Pattern,
+        [Parameter(Mandatory)][string]$Message
+    )
+    if ($Text -match $Pattern) {
+        Add-Failure $Message
+    }
+}
+
+function New-TestMsix {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$PackageName
+    )
+
+    $root = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $root | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $root 'app/resources') -Force | Out-Null
+
+    $manifest = @"
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10" xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10" xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities" IgnorableNamespaces="uap rescap">
+  <Identity Name="$PackageName" ProcessorArchitecture="x64" Version="26.608.1337.0" Publisher="CN=TEST" />
+  <Properties>
+    <DisplayName>Codex</DisplayName>
+    <PublisherDisplayName>OpenAI</PublisherDisplayName>
+    <Logo>assets/icon.png</Logo>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Resources>
+    <Resource Language="en-US" />
+  </Resources>
+  <Applications>
+    <Application Id="App" Executable="app/Codex.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="Codex" Description="Codex" Square44x44Logo="assets/Square44x44Logo.png" Square150x150Logo="assets/Square150x150Logo.png" BackgroundColor="#3143FF" />
+    </Application>
+  </Applications>
+</Package>
+"@
+
+    Set-Content -LiteralPath (Join-Path $root 'AppxManifest.xml') -Value $manifest -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $root 'app/Codex.exe') -Value 'fake binary' -Encoding ASCII
+    Set-Content -LiteralPath (Join-Path $root 'app/resources/icon.ico') -Value 'fake icon' -Encoding ASCII
+
+    if (Test-Path -LiteralPath $Path) {
+        Remove-Item -LiteralPath $Path -Force
+    }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::CreateFromDirectory($root, $Path)
+    Remove-Item -LiteralPath $root -Recurse -Force
+}
+
+function Test-RequiredFilesExist {
+    $paths = @(
+        '.gitignore',
+        'installer/Codex.nsi',
+        'scripts/resolve-msix-url.ps1',
+        'scripts/prepare-payload.ps1',
+        'scripts/build-installer.ps1',
+        'scripts/test-installer-ci.ps1',
+        '.github/workflows/release.yml'
+    )
+
+    foreach ($path in $paths) {
+        Assert-True (Test-Path -LiteralPath (Join-RepoPath $path)) "Missing required file: $path"
+    }
+}
+
+function Test-PreparePayloadScript {
+    $script = Join-RepoPath 'scripts/prepare-payload.ps1'
+    if (-not (Test-Path -LiteralPath $script)) {
+        Add-Failure 'scripts/prepare-payload.ps1 must exist before payload behavior can be tested'
+        return
+    }
+
+    $temp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $temp | Out-Null
+    try {
+        $msix = Join-Path $temp 'OpenAI.Codex_26.608.1337.0_x64__2p2nqsd0c76g0.Msix'
+        $payload = Join-Path $temp 'payload'
+        $metadataPath = Join-Path $temp 'metadata.json'
+        New-TestMsix -Path $msix -PackageName 'OpenAI.Codex'
+
+        & $script -MsixPath $msix -OutputDir $payload -MetadataPath $metadataPath | Out-Null
+
+        Assert-True (Test-Path -LiteralPath (Join-Path $payload 'Codex.exe')) 'prepare-payload must extract app/Codex.exe to the payload root'
+        Assert-True (Test-Path -LiteralPath (Join-Path $payload 'resources/icon.ico')) 'prepare-payload must preserve nested resources under payload root'
+        Assert-True (Test-Path -LiteralPath $metadataPath) 'prepare-payload must write metadata JSON'
+
+        $metadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
+        Assert-True ($metadata.PackageName -eq 'OpenAI.Codex') 'metadata PackageName must be OpenAI.Codex'
+        Assert-True ($metadata.Version -eq '26.608.1337.0') 'metadata Version must come from AppxManifest.xml'
+        Assert-True ($metadata.Architecture -eq 'x64') 'metadata Architecture must come from AppxManifest.xml'
+        Assert-True ($metadata.EntryPoint -eq 'app/Codex.exe') 'metadata EntryPoint must come from AppxManifest.xml'
+        Assert-True (-not [string]::IsNullOrWhiteSpace($metadata.MsixSha256)) 'metadata must include the MSIX SHA256'
+        Assert-True (-not [string]::IsNullOrWhiteSpace($metadata.SignatureStatus)) 'metadata must include the Authenticode signature status'
+
+        $badMsix = Join-Path $temp 'Wrong.Package_1.0.0.0_x64__test.Msix'
+        New-TestMsix -Path $badMsix -PackageName 'Wrong.Package'
+        $rejected = $false
+        try {
+            & $script -MsixPath $badMsix -OutputDir (Join-Path $temp 'bad-payload') -MetadataPath (Join-Path $temp 'bad.json') | Out-Null
+        } catch {
+            $rejected = $true
+        }
+        Assert-True $rejected 'prepare-payload must reject packages whose Identity Name is not OpenAI.Codex'
+    } finally {
+        if (Test-Path -LiteralPath $temp) {
+            Remove-Item -LiteralPath $temp -Recurse -Force
+        }
+    }
+}
+
+function Test-NsisScriptContent {
+    $path = Join-RepoPath 'installer/Codex.nsi'
+    if (-not (Test-Path -LiteralPath $path)) {
+        Add-Failure 'installer/Codex.nsi must exist before NSIS content can be tested'
+        return
+    }
+
+    $text = Get-Content -LiteralPath $path -Raw
+    Assert-Contains $text '(?m)^\s*RequestExecutionLevel\s+admin\b' 'NSIS installer must require admin elevation'
+    Assert-Contains $text ([regex]::Escape('InstallDir "$PROGRAMFILES64\Codex"')) 'NSIS installer must default to %ProgramFiles%\Codex'
+    Assert-Contains $text ([regex]::Escape('WriteRegStr HKLM "Software\Classes\codex" "URL Protocol" ""')) 'NSIS installer must register codex: URL protocol'
+    Assert-Contains $text 'WriteUninstaller' 'NSIS installer must generate an uninstaller'
+    Assert-Contains $text 'CreateShortCut\s+"\$SMPROGRAMS\\Codex\\Codex\.lnk"' 'NSIS installer must create an all-users Start Menu shortcut'
+
+    foreach ($extension in @('\.csv', '\.tsv', '\.xls', '\.xlsm', '\.xlsx')) {
+        Assert-NotContains $text $extension "NSIS installer must not register spreadsheet file association pattern $extension"
+    }
+}
+
+function Test-CiScriptGuard {
+    $path = Join-RepoPath 'scripts/test-installer-ci.ps1'
+    if (-not (Test-Path -LiteralPath $path)) {
+        Add-Failure 'scripts/test-installer-ci.ps1 must exist before CI install guard can be tested'
+        return
+    }
+
+    $text = Get-Content -LiteralPath $path -Raw
+    Assert-Contains $text '\$env:CI\s+-ne\s+''true''' 'CI installer test script must refuse to run outside CI by default'
+    Assert-Contains $text 'Start-Process' 'CI installer test script must install via Start-Process'
+    Assert-Contains $text 'UninstallString' 'CI installer test script must verify the uninstall registry entry'
+    Assert-Contains $text 'Software\\Classes\\codex' 'CI installer test script must verify codex: protocol registration'
+
+    foreach ($extension in @('\.csv', '\.tsv', '\.xls', '\.xlsm', '\.xlsx')) {
+        Assert-Contains $text $extension "CI script must explicitly assert no file association for $extension"
+    }
+}
+
+function Test-WorkflowContent {
+    $path = Join-RepoPath '.github/workflows/release.yml'
+    if (-not (Test-Path -LiteralPath $path)) {
+        Add-Failure '.github/workflows/release.yml must exist before workflow content can be tested'
+        return
+    }
+
+    $text = Get-Content -LiteralPath $path -Raw
+    Assert-Contains $text 'workflow_dispatch:' 'release workflow must support manual workflow_dispatch'
+    Assert-Contains $text 'msix_url:' 'release workflow must expose an optional msix_url input'
+    Assert-Contains $text 'draft:' 'release workflow must expose a draft input'
+    Assert-Contains $text 'runs-on:\s+windows-' 'release workflow must run on a Windows runner'
+    Assert-Contains $text 'scripts/build-installer\.ps1' 'release workflow must call scripts/build-installer.ps1'
+    Assert-Contains $text 'scripts/test-installer-ci\.ps1' 'release workflow must call scripts/test-installer-ci.ps1'
+    Assert-Contains $text 'gh\s+@releaseArgs' 'release workflow must publish assets with gh release create arguments'
+}
+
+Test-RequiredFilesExist
+Test-PreparePayloadScript
+Test-NsisScriptContent
+Test-CiScriptGuard
+Test-WorkflowContent
+
+if ($Failures.Count -gt 0) {
+    foreach ($failure in $Failures) {
+        Write-Error $failure -ErrorAction Continue
+    }
+    throw "$($Failures.Count) packaging test(s) failed"
+}
+
+Write-Host 'All packaging tests passed.'
