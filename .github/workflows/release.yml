@@ -17,20 +17,40 @@ on:
         default: true
         type: boolean
   push:
+    branches:
+      - codex/windows-installer-packaging
+      - main
+      - master
     tags:
       - 'v*'
+  pull_request:
+    branches:
+      - codex/windows-installer-packaging
+      - main
+      - master
 
 permissions:
   contents: write
 
 jobs:
+  validate:
+    name: Validate packaging scripts
+    if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')) }}
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run packaging tests
+        shell: pwsh
+        run: |
+          ./tests/packaging.tests.ps1
+
   build:
     name: Build and verify installer
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
     runs-on: windows-latest
-    env:
-      MSIX_URL: ${{ inputs.msix_url }}
-      EXPECTED_VERSION: ${{ inputs.version }}
-      DRAFT_RELEASE: ${{ inputs.draft }}
 
     steps:
       - name: Check out repository
@@ -48,6 +68,8 @@ jobs:
 
       - name: Resolve and download MSIX
         shell: pwsh
+        env:
+          MSIX_URL: ${{ inputs.msix_url }}
         run: |
           New-Item -ItemType Directory -Path source -Force | Out-Null
           $url = $env:MSIX_URL
@@ -69,6 +91,8 @@ jobs:
       - name: Build installer
         id: build
         shell: pwsh
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
         run: |
           $args = @{
             MsixPath = 'source\Codex.msix'
@@ -102,6 +126,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          DRAFT_RELEASE: ${{ inputs.draft }}
         run: |
           if ($env:GITHUB_REF_TYPE -eq 'tag') {
             $tag = $env:GITHUB_REF_NAME
