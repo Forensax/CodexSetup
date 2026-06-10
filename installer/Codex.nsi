@@ -17,7 +17,7 @@
 !define APP_PROTOCOL_KEY "Software\Classes\codex"
 
 Unicode true
-SetCompress off
+SetCompressor zlib
 RequestExecutionLevel admin
 InstallDir "$PROGRAMFILES64\Codex"
 InstallDirRegKey HKLM "${APP_REGKEY}" "InstallDir"
