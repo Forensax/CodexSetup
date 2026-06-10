@@ -62,9 +62,11 @@ jobs:
           choco install nsis -y --no-progress
           $nsisPath = "${env:ProgramFiles(x86)}\NSIS"
           if (Test-Path -LiteralPath $nsisPath) {
+            $env:Path = "$nsisPath;$env:Path"
             $nsisPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
-          makensis /VERSION
+          $makeNsis = Get-Command makensis.exe -ErrorAction Stop
+          & $makeNsis.Source /VERSION
 
       - name: Resolve and download MSIX
         shell: pwsh

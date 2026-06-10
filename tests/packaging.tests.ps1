@@ -204,6 +204,8 @@ function Test-WorkflowContent {
     Assert-Contains $text 'scripts/build-installer\.ps1' 'release workflow must call scripts/build-installer.ps1'
     Assert-Contains $text 'scripts/test-installer-ci\.ps1' 'release workflow must call scripts/test-installer-ci.ps1'
     Assert-Contains $text 'gh\s+@releaseArgs' 'release workflow must publish assets with gh release create arguments'
+    Assert-Contains $text '\$makeNsis\s*=\s*Get-Command\s+makensis\.exe' 'release workflow must resolve makensis.exe before verifying NSIS'
+    Assert-NotContains $text '(?m)^\s*makensis\s+/VERSION\s*$' 'release workflow must not call bare makensis /VERSION before PATH updates take effect'
 }
 
 Test-RequiredFilesExist
