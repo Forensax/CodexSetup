@@ -152,6 +152,46 @@ function Test-PreparePayloadScript {
     }
 }
 
+function Test-ResolveMsixUrlParser {
+    $script = Join-RepoPath 'scripts/resolve-msix-url.ps1'
+    if (-not (Test-Path -LiteralPath $script)) {
+        Add-Failure 'scripts/resolve-msix-url.ps1 must exist before rg-adguard parser behavior can be tested'
+        return
+    }
+
+    $scriptText = Get-Content -LiteralPath $script -Raw
+    Assert-Contains $scriptText 'function\s+Select-CodexMsixUrl' 'resolve-msix-url must expose Select-CodexMsixUrl for parser testing'
+
+    $temp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $temp | Out-Null
+    try {
+        $harness = Join-Path $temp 'parser-harness.ps1'
+        $moduleText = $scriptText -replace '(?s)\$attempts\s*=\s*@\(.+$', ''
+        $fixture = @'
+<table class="tftable">
+  <tr><td><a href="http://dl.delivery.mp.microsoft.com/filestreamingservice/files/blockmap" rel="noreferrer">OpenAI.Codex_26.608.1337.0_x64__2p2nqsd0c76g0.BlockMap</a></td></tr>
+  <tr><td><a href="http://dl.delivery.mp.microsoft.com/filestreamingservice/files/old" rel="noreferrer">OpenAI.Codex_26.607.1200.0_x64__2p2nqsd0c76g0.Msix</a></td></tr>
+  <tr><td><a href="http://dl.delivery.mp.microsoft.com/filestreamingservice/files/latest" rel="noreferrer">OpenAI.Codex_26.608.1337.0_x64__2p2nqsd0c76g0.Msix</a></td></tr>
+  <tr><td><a href="http://dl.delivery.mp.microsoft.com/filestreamingservice/files/arm64" rel="noreferrer">OpenAI.Codex_26.608.1337.0_arm64__2p2nqsd0c76g0.Msix</a></td></tr>
+</table>
+'@
+        @"
+$moduleText
+`$html = @'
+$fixture
+'@
+Select-CodexMsixUrl -Html `$html
+"@ | Set-Content -LiteralPath $harness -Encoding UTF8
+
+        $selected = & powershell -NoProfile -ExecutionPolicy Bypass -File $harness
+        Assert-True ($selected -eq 'http://dl.delivery.mp.microsoft.com/filestreamingservice/files/latest') 'resolve-msix-url must select the latest x64 MSIX href when rg-adguard uses filename as anchor text'
+    } finally {
+        if (Test-Path -LiteralPath $temp) {
+            Remove-Item -LiteralPath $temp -Recurse -Force
+        }
+    }
+}
+
 function Test-NsisScriptContent {
     $path = Join-RepoPath 'installer/Codex.nsi'
     if (-not (Test-Path -LiteralPath $path)) {
@@ -210,6 +250,7 @@ function Test-WorkflowContent {
 
 Test-RequiredFilesExist
 Test-PreparePayloadScript
+Test-ResolveMsixUrlParser
 Test-NsisScriptContent
 Test-CiScriptGuard
 Test-WorkflowContent

@@ -40,22 +40,55 @@ function Select-CodexMsixUrl {
     param([Parameter(Mandatory)][string]$Html)
 
     $decoded = [System.Net.WebUtility]::HtmlDecode($Html)
-    $matches = [regex]::Matches(
+
+    $anchorMatches = [regex]::Matches(
         $decoded,
-        'https?://[^\s"''<>]+OpenAI\.Codex_[^\s"''<>]+_x64__2p2nqsd0c76g0\.Msix(?:\?[^\s"''<>]*)?',
+        '<a\s+[^>]*href="(?<url>https?://[^"]+)"[^>]*>\s*(?<name>OpenAI\.Codex_[^<]+_x64__2p2nqsd0c76g0\.Msix)\s*</a>',
         [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
     )
 
-    $candidates = foreach ($match in $matches) {
-        $url = $match.Value
-        $fileName = [System.IO.Path]::GetFileName(([System.Uri]$url).AbsolutePath)
-        $unescapedName = [System.Uri]::UnescapeDataString($fileName)
-        $versionMatch = [regex]::Match($unescapedName, 'OpenAI\.Codex_(?<version>\d+(?:\.\d+){3})_x64__2p2nqsd0c76g0\.Msix', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    $candidates = foreach ($match in $anchorMatches) {
+        $url = $match.Groups['url'].Value
+        $fileName = [System.Net.WebUtility]::HtmlDecode($match.Groups['name'].Value)
+        $versionMatch = [regex]::Match($fileName, 'OpenAI\.Codex_(?<version>\d+(?:\.\d+){3})_x64__2p2nqsd0c76g0\.Msix', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
         if ($versionMatch.Success) {
             [PSCustomObject]@{
                 Url     = $url
                 Version = [version]$versionMatch.Groups['version'].Value
             }
+        }
+    }
+
+    if ($null -eq $candidates -or @($candidates).Count -eq 0) {
+        $urlMatches = [regex]::Matches(
+            $decoded,
+            'https?://[^\s"''<>]+OpenAI\.Codex_[^\s"''<>]+_x64__2p2nqsd0c76g0\.Msix(?:\?[^\s"''<>]*)?',
+            [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+        )
+
+        $candidates = foreach ($match in $urlMatches) {
+            $url = $match.Value
+            $fileName = [System.IO.Path]::GetFileName(([System.Uri]$url).AbsolutePath)
+            $unescapedName = [System.Uri]::UnescapeDataString($fileName)
+            $versionMatch = [regex]::Match($unescapedName, 'OpenAI\.Codex_(?<version>\d+(?:\.\d+){3})_x64__2p2nqsd0c76g0\.Msix', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+            if ($versionMatch.Success) {
+                [PSCustomObject]@{
+                    Url     = $url
+                    Version = [version]$versionMatch.Groups['version'].Value
+                }
+            }
+        }
+    }
+
+    if ($null -eq $candidates -or @($candidates).Count -eq 0) {
+        $fileMatches = [regex]::Matches(
+            $decoded,
+            'OpenAI\.Codex_(?<version>\d+(?:\.\d+){3})_x64__2p2nqsd0c76g0\.Msix',
+            [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+        )
+        if ($fileMatches.Count -gt 0) {
+            $available = ($fileMatches | ForEach-Object { $_.Value } | Sort-Object -Unique) -join ', '
+            throw "Found Codex MSIX filenames but could not find their download hrefs: $available"
         }
     }
 
