@@ -193,12 +193,10 @@ jobs:
 
           $installerAsset = "$env:INSTALLER_PATH#CodexSetup-x64-$env:VERSION.exe"
           $portableAsset = "$env:PORTABLE_PATH#CodexPortable-x64-$env:VERSION.zip"
-          $checksumsAsset = "$env:CHECKSUMS_PATH#checksums.txt"
           $releaseArgs = @(
             'release', 'create', $tag,
             $installerAsset,
             $portableAsset,
-            $checksumsAsset,
             '--title', "Codex $env:VERSION",
             '--notes-file', $env:RELEASE_NOTES_PATH,
             '--target', $env:GITHUB_SHA

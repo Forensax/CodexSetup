@@ -303,6 +303,7 @@ function Test-WorkflowContent {
     Assert-Contains $text 'PORTABLE_PATH=\$\(.*PortablePath' 'release workflow must export the portable ZIP path from the build result'
     Assert-Contains $text '\$\{\{ env\.PORTABLE_PATH \}\}' 'release workflow must upload the portable ZIP as a workflow artifact'
     Assert-Contains $text 'portableAsset\s*=\s*"\$env:PORTABLE_PATH#CodexPortable-x64-\$env:VERSION\.zip"' 'release workflow must publish the portable ZIP as a release asset'
+    Assert-NotContains $text 'checksumsAsset\s*=\s*"\$env:CHECKSUMS_PATH#checksums\.txt"' 'release workflow must not publish checksums.txt as a GitHub Release asset'
     Assert-Contains $text 'gh\s+release\s+view\s+\$tag' 'release workflow must check whether the resolved version already has a GitHub Release'
     Assert-Contains $text 'SHOULD_BUILD=false' 'release workflow must stop scheduled runs when no new Codex version is available'
     Assert-Contains $text 'resolve-msix-url\.ps1[^\r\n]+-Json' 'release workflow must use JSON resolver output for automatic version checks'
