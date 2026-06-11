@@ -6,15 +6,17 @@
 
 - 每小时自动检查一次 Codex Retail x64 MSIX 是否有新版本。
 - 如果 GitHub Release 中已经存在对应的 `v版本号`，说明没有新版本，本次 workflow 会正常停止。
-- 如果发现新版本，会自动下载 MSIX、构建 EXE 安装包、在 GitHub Actions 的 Windows runner 中做安装/卸载验证，然后创建 GitHub Release。
+- 如果发现新版本，会自动下载 MSIX、构建 EXE 安装包和 Portable ZIP、在 GitHub Actions 的 Windows runner 中做安装/卸载验证，然后创建 GitHub Release。
 - 也可以在 Actions 页面手动运行 workflow，并在自动解析失败时填写 `msix_url`。
 
 ## 安装包策略
 
+- Release 会同时输出 `CodexSetup-x64-版本号.exe` 和 `CodexPortable-x64-版本号.zip`。
 - 安装器类型：传统 NSIS EXE。
 - 安装范围：全机器安装，需要管理员权限。
 - 默认安装目录：`%ProgramFiles%\Codex`。
 - 注册内容：开始菜单快捷方式、卸载项、`codex:` 协议。
+- Portable ZIP：解压后直接运行 `Codex.exe`，不写注册表、不创建快捷方式、不注册 `codex:` 协议。
 - 不注册 `.csv`、`.tsv`、`.xls`、`.xlsm`、`.xlsx` 文件关联。
 - 压缩方式：`zlib`，在构建速度和安装包体积之间折中。
 - 签名策略：当前安装器不签名，运行时可能出现 SmartScreen 或未知发布者提示。

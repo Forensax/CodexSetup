@@ -121,6 +121,8 @@ function Test-ReadmeContent {
     Assert-Contains $text '\u6bcf\u5c0f\u65f6|1\s*\u5c0f\u65f6|\u4e00\u5c0f\u65f6' 'README must document the hourly version check'
     Assert-Contains $text '\u6ca1\u6709\u65b0\u7248\u672c' 'README must document that scheduled runs stop when no new version exists'
     Assert-Contains $text 'zlib' 'README must document the zlib speed/size compression compromise'
+    Assert-Contains $text 'Portable|portable' 'README must document the portable build artifact'
+    Assert-Contains $text 'CodexPortable-x64-' 'README must name the portable ZIP artifact'
 }
 
 function Test-PreparePayloadScript {
@@ -166,6 +168,22 @@ function Test-PreparePayloadScript {
             Remove-Item -LiteralPath $temp -Recurse -Force
         }
     }
+}
+
+function Test-BuildInstallerScript {
+    $script = Join-RepoPath 'scripts/build-installer.ps1'
+    if (-not (Test-Path -LiteralPath $script)) {
+        Add-Failure 'scripts/build-installer.ps1 must exist before build behavior can be tested'
+        return
+    }
+
+    $text = Get-Content -LiteralPath $script -Raw -Encoding UTF8
+    Assert-Contains $text 'CodexPortable-x64-\$effectiveVersion\.zip' 'build script must create a versioned portable ZIP path'
+    Assert-Contains $text 'CreateFromDirectory\(\s*\$payloadDir,\s*\$portablePath' 'build script must zip the extracted payload directory for portable builds'
+    Assert-Contains $text '\$portableHash\s*=\s*Get-FileHash' 'build script must calculate the portable ZIP SHA256'
+    Assert-Contains $text '\$portableHash\.Hash\)\s+ \$\(Split-Path -Leaf \$portablePath\)' 'checksums.txt must include the portable ZIP hash'
+    Assert-Contains $text 'PortablePath\s*=\s*\$portablePath' 'build script result must expose PortablePath to the workflow'
+    Assert-Contains $text 'CodexPortable-x64-' 'release notes must mention the portable ZIP artifact'
 }
 
 function Test-ResolveMsixUrlParser {
@@ -282,6 +300,9 @@ function Test-WorkflowContent {
     Assert-Contains $text 'scripts/build-installer\.ps1' 'release workflow must call scripts/build-installer.ps1'
     Assert-Contains $text 'scripts/test-installer-ci\.ps1' 'release workflow must call scripts/test-installer-ci.ps1'
     Assert-Contains $text 'gh\s+@releaseArgs' 'release workflow must publish assets with gh release create arguments'
+    Assert-Contains $text 'PORTABLE_PATH=\$\(.*PortablePath' 'release workflow must export the portable ZIP path from the build result'
+    Assert-Contains $text '\$\{\{ env\.PORTABLE_PATH \}\}' 'release workflow must upload the portable ZIP as a workflow artifact'
+    Assert-Contains $text 'portableAsset\s*=\s*"\$env:PORTABLE_PATH#CodexPortable-x64-\$env:VERSION\.zip"' 'release workflow must publish the portable ZIP as a release asset'
     Assert-Contains $text 'gh\s+release\s+view\s+\$tag' 'release workflow must check whether the resolved version already has a GitHub Release'
     Assert-Contains $text 'SHOULD_BUILD=false' 'release workflow must stop scheduled runs when no new Codex version is available'
     Assert-Contains $text 'resolve-msix-url\.ps1[^\r\n]+-Json' 'release workflow must use JSON resolver output for automatic version checks'
@@ -291,6 +312,7 @@ function Test-WorkflowContent {
 
 Test-RequiredFilesExist
 Test-ReadmeContent
+Test-BuildInstallerScript
 Test-PreparePayloadScript
 Test-ResolveMsixUrlParser
 Test-NsisScriptContent

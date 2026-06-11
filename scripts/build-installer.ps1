@@ -77,11 +77,15 @@ if (-not [string]::IsNullOrWhiteSpace($Version) -and $metadata.Version -ne $Vers
 
 $effectiveVersion = $metadata.Version
 $installerPath = Join-Path $outFullPath "CodexSetup-x64-$effectiveVersion.exe"
+$portablePath = Join-Path $outFullPath "CodexPortable-x64-$effectiveVersion.zip"
 $releaseNotesPath = Join-Path $outFullPath 'release-notes.md'
 $checksumsPath = Join-Path $outFullPath 'checksums.txt'
 
 if (Test-Path -LiteralPath $installerPath) {
     Remove-Item -LiteralPath $installerPath -Force
+}
+if (Test-Path -LiteralPath $portablePath) {
+    Remove-Item -LiteralPath $portablePath -Force
 }
 
 $makensisArgs = @(
@@ -101,11 +105,24 @@ if (-not (Test-Path -LiteralPath $installerPath)) {
     throw "NSIS completed but installer was not created: $installerPath"
 }
 
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory(
+    $payloadDir,
+    $portablePath,
+    [System.IO.Compression.CompressionLevel]::Fastest,
+    $false
+)
+if (-not (Test-Path -LiteralPath $portablePath)) {
+    throw "Portable ZIP was not created: $portablePath"
+}
+
 $installerHash = Get-FileHash -Algorithm SHA256 -LiteralPath $installerPath
+$portableHash = Get-FileHash -Algorithm SHA256 -LiteralPath $portablePath
 $msixHash = Get-FileHash -Algorithm SHA256 -LiteralPath $resolvedMsix
 
 @(
     "$($installerHash.Hash)  $(Split-Path -Leaf $installerPath)"
+    "$($portableHash.Hash)  $(Split-Path -Leaf $portablePath)"
     "$($msixHash.Hash)  $(Split-Path -Leaf $resolvedMsix)"
 ) | Set-Content -LiteralPath $checksumsPath -Encoding UTF8
 
@@ -123,16 +140,20 @@ This release repackages the Microsoft Store MSIX payload into a traditional all-
 - Install scope: all-machine
 - Default install directory: `%ProgramFiles%\Codex`
 - Installer signing: unsigned
+- Portable ZIP: `CodexPortable-x64-$effectiveVersion.zip`
 - MSIX package identity: $($metadata.PackageName)
 - MSIX architecture: $($metadata.Architecture)
 - MSIX entry point: $($metadata.EntryPoint)
 - MSIX Authenticode status: $($metadata.SignatureStatus)
 - MSIX SHA256: $($msixHash.Hash)
 - Installer SHA256: $($installerHash.Hash)
+- Portable ZIP SHA256: $($portableHash.Hash)
 
 $signingText
 
 The installer creates a Start Menu shortcut, an uninstall entry, and the `codex:` URL protocol registration. It does not register spreadsheet file associations.
+
+The portable ZIP contains the extracted Codex payload at the archive root. It does not install files, create shortcuts, write registry entries, register the `codex:` protocol, or register spreadsheet file associations.
 "@
 
 $notes | Set-Content -LiteralPath $releaseNotesPath -Encoding UTF8
@@ -140,6 +161,7 @@ $notes | Set-Content -LiteralPath $releaseNotesPath -Encoding UTF8
 [PSCustomObject]@{
     Version          = $effectiveVersion
     InstallerPath    = $installerPath
+    PortablePath     = $portablePath
     ChecksumsPath    = $checksumsPath
     ReleaseNotesPath = $releaseNotesPath
     MetadataPath     = $metadataPath

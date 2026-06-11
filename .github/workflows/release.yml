@@ -150,6 +150,7 @@ jobs:
           $result = ./scripts/build-installer.ps1 @args
           "VERSION=$($result.Version)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "INSTALLER_PATH=$($result.InstallerPath)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PORTABLE_PATH=$($result.PortablePath)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CHECKSUMS_PATH=$($result.ChecksumsPath)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "RELEASE_NOTES_PATH=$($result.ReleaseNotesPath)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -166,6 +167,7 @@ jobs:
           name: CodexSetup-x64-${{ env.VERSION }}
           path: |
             ${{ env.INSTALLER_PATH }}
+            ${{ env.PORTABLE_PATH }}
             ${{ env.CHECKSUMS_PATH }}
             ${{ env.RELEASE_NOTES_PATH }}
 
@@ -190,10 +192,12 @@ jobs:
           }
 
           $installerAsset = "$env:INSTALLER_PATH#CodexSetup-x64-$env:VERSION.exe"
+          $portableAsset = "$env:PORTABLE_PATH#CodexPortable-x64-$env:VERSION.zip"
           $checksumsAsset = "$env:CHECKSUMS_PATH#checksums.txt"
           $releaseArgs = @(
             'release', 'create', $tag,
             $installerAsset,
+            $portableAsset,
             $checksumsAsset,
             '--title', "Codex $env:VERSION",
             '--notes-file', $env:RELEASE_NOTES_PATH,
