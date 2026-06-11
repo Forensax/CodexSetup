@@ -184,6 +184,18 @@ function Test-BuildInstallerScript {
     Assert-Contains $text '\$portableHash\.Hash\)\s+ \$\(Split-Path -Leaf \$portablePath\)' 'checksums.txt must include the portable ZIP hash'
     Assert-Contains $text 'PortablePath\s*=\s*\$portablePath' 'build script result must expose PortablePath to the workflow'
     Assert-Contains $text 'CodexPortable-x64-' 'release notes must mention the portable ZIP artifact'
+    Assert-Contains $text '# Codex Windows \$effectiveVersion' 'release notes must use the concise Codex Windows title'
+    Assert-Contains $text 'ConvertFromUtf32\(0x1F4E6\)' 'release notes must define the package emoji by code point'
+    Assert-Contains $text 'ConvertFromUtf32\(0x2705\)' 'release notes must define the checksum emoji by code point'
+    Assert-Contains $text 'ConvertFromUtf32\(0x26A0\)' 'release notes must define the warning emoji by code point'
+    Assert-Contains $text '## \$packageEmoji \u4E0B\u8F7D' 'release notes must include the download emoji section'
+    Assert-Contains $text '## \$checkEmoji \u6821\u9A8C' 'release notes must include the checksum emoji section'
+    Assert-Contains $text '## \$warningEmoji \u6CE8\u610F' 'release notes must include the warning emoji section'
+    Assert-Contains $text '\u5B89\u88C5\u7248' 'release notes must describe the installer in Chinese'
+    Assert-Contains $text '\u4FBF\u643A\u7248' 'release notes must describe the portable build in Chinese'
+    Assert-Contains $text 'EXE SHA256: \$\(\$installerHash\.Hash\)' 'release notes must include the installer SHA256'
+    Assert-Contains $text 'ZIP SHA256: \$\(\$portableHash\.Hash\)' 'release notes must include the portable ZIP SHA256'
+    Assert-NotContains $text 'MSIX package identity' 'release notes must omit verbose MSIX metadata'
 }
 
 function Test-ResolveMsixUrlParser {

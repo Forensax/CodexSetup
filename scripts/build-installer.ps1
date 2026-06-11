@@ -127,33 +127,32 @@ $msixHash = Get-FileHash -Algorithm SHA256 -LiteralPath $resolvedMsix
 ) | Set-Content -LiteralPath $checksumsPath -Encoding UTF8
 
 $signingText = if ($Unsigned) {
-    'This installer is intentionally unsigned for this build. Windows may show SmartScreen or unknown publisher warnings.'
+    '当前构建未签名，Windows 可能显示 SmartScreen 或未知发布者提示。'
 } else {
-    'No code signing step was configured by this packaging project.'
+    '当前构建未配置代码签名步骤。'
 }
 
+$packageEmoji = [char]::ConvertFromUtf32(0x1F4E6)
+$desktopEmoji = [char]::ConvertFromUtf32(0x1F5A5) + [char]::ConvertFromUtf32(0xFE0F)
+$luggageEmoji = [char]::ConvertFromUtf32(0x1F9F3)
+$checkEmoji = [char]::ConvertFromUtf32(0x2705)
+$warningEmoji = [char]::ConvertFromUtf32(0x26A0) + [char]::ConvertFromUtf32(0xFE0F)
+
 $notes = @"
-# Codex $effectiveVersion Windows Installer
+# Codex Windows $effectiveVersion
 
-This release repackages the Microsoft Store MSIX payload into a traditional all-machine NSIS installer.
+## $packageEmoji 下载
+- $desktopEmoji 安装版：`CodexSetup-x64-$effectiveVersion.exe`
+- $luggageEmoji 便携版：`CodexPortable-x64-$effectiveVersion.zip`
 
-- Install scope: all-machine
-- Default install directory: `%ProgramFiles%\Codex`
-- Installer signing: unsigned
-- Portable ZIP: `CodexPortable-x64-$effectiveVersion.zip`
-- MSIX package identity: $($metadata.PackageName)
-- MSIX architecture: $($metadata.Architecture)
-- MSIX entry point: $($metadata.EntryPoint)
-- MSIX Authenticode status: $($metadata.SignatureStatus)
-- MSIX SHA256: $($msixHash.Hash)
-- Installer SHA256: $($installerHash.Hash)
-- Portable ZIP SHA256: $($portableHash.Hash)
+## $checkEmoji 校验
+- EXE SHA256: $($installerHash.Hash)
+- ZIP SHA256: $($portableHash.Hash)
 
-$signingText
-
-The installer creates a Start Menu shortcut, an uninstall entry, and the `codex:` URL protocol registration. It does not register spreadsheet file associations.
-
-The portable ZIP contains the extracted Codex payload at the archive root. It does not install files, create shortcuts, write registry entries, register the `codex:` protocol, or register spreadsheet file associations.
+## $warningEmoji 注意
+- 安装版需要管理员权限，会写入开始菜单、卸载项和 `codex:` 协议。
+- 便携版解压即用，不写注册表、不创建快捷方式。
+- $signingText
 "@
 
 $notes | Set-Content -LiteralPath $releaseNotesPath -Encoding UTF8
