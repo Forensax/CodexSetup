@@ -103,12 +103,24 @@ jobs:
             }
 
             $tag = "v$resolvedVersion"
-            gh release view $tag *> $null
-            if ($LASTEXITCODE -eq 0) {
+            $releaseApi = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$tag"
+            $releaseResponse = Invoke-WebRequest `
+              -Uri $releaseApi `
+              -Headers @{
+                Authorization = "Bearer $env:GH_TOKEN"
+                Accept = 'application/vnd.github+json'
+              } `
+              -SkipHttpErrorCheck
+
+            if ($releaseResponse.StatusCode -eq 200) {
               Write-Host "没有新版本：GitHub Release 已存在 $tag，停止本次定时打包。"
               "SHOULD_BUILD=false" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
               "RESOLVED_VERSION=$resolvedVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
               exit 0
+            }
+
+            if ($releaseResponse.StatusCode -ne 404) {
+              throw "检查 GitHub Release $tag 失败，HTTP status: $($releaseResponse.StatusCode)"
             }
 
             Write-Host "发现新版本 $resolvedVersion，准备自动打包。"
