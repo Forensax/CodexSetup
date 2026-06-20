@@ -267,6 +267,11 @@ function Test-NsisScriptContent {
     Assert-Contains $text ([regex]::Escape('WriteRegStr HKLM "Software\Classes\codex" "URL Protocol" ""')) 'NSIS installer must register codex: URL protocol'
     Assert-Contains $text 'WriteUninstaller' 'NSIS installer must generate an uninstaller'
     Assert-Contains $text 'CreateShortCut\s+"\$SMPROGRAMS\\Codex\\Codex\.lnk"' 'NSIS installer must create an all-users Start Menu shortcut'
+    Assert-Contains $text '!if\s+/FileExists\s+"\$\{PAYLOAD_DIR\}\\resources\\icon\.ico"' 'NSIS installer must treat resources/icon.ico as optional'
+    Assert-Contains $text 'CreateShortCut[^\r\n]+"\$INSTDIR\\Codex\.exe"\s+0' 'Start Menu shortcut must use the Codex executable icon as a stable fallback'
+    Assert-Contains $text 'DefaultIcon[^\r\n]+Codex\.exe[^\r\n]*,0' 'codex protocol must use the Codex executable icon'
+    Assert-Contains $text 'DisplayIcon[^\r\n]+Codex\.exe[^\r\n]*,0' 'uninstall entry must use the Codex executable icon'
+    Assert-NotContains $text 'CreateShortCut[^\r\n]+resources\\icon\.ico' 'Start Menu shortcut must not require the optional resources/icon.ico file'
     Assert-Contains $text '!insertmacro\s+MUI_LANGUAGE\s+"SimpChinese"' 'NSIS installer must use Simplified Chinese UI language'
     Assert-Contains $text '(?m)^\s*SetCompressor\s+zlib\s*$' 'NSIS installer must use zlib as the speed/size compression compromise'
     Assert-NotContains $text '(?m)^\s*SetCompressor\s+/SOLID\s+lzma\s*$' 'NSIS installer must not use slow solid LZMA compression'
@@ -323,6 +328,9 @@ function Test-WorkflowContent {
     Assert-Contains $text 'SHOULD_BUILD=false' 'release workflow must stop scheduled runs when no new Codex version is available'
     Assert-Contains $text 'resolve-msix-url\.ps1[^\r\n]+-Json' 'release workflow must use JSON resolver output for automatic version checks'
     Assert-Contains $text '\$makeNsis\s*=\s*Get-Command\s+makensis\.exe' 'release workflow must resolve makensis.exe before verifying NSIS'
+    Assert-Contains $text 'for\s*\(\$attempt\s*=\s*1;\s*\$attempt\s*-le\s*3;' 'release workflow must retry transient Chocolatey NSIS installation failures'
+    Assert-Contains $text '\$chocoExitCode\s*=\s*\$LASTEXITCODE' 'release workflow must capture the Chocolatey exit code explicitly'
+    Assert-Contains $text 'Start-Sleep\s+-Seconds' 'release workflow must wait between Chocolatey retries'
     Assert-NotContains $text '(?m)^\s*makensis\s+/VERSION\s*$' 'release workflow must not call bare makensis /VERSION before PATH updates take effect'
 }
 

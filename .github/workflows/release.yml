@@ -65,8 +65,25 @@ jobs:
       - name: 安装 NSIS
         shell: pwsh
         run: |
-          choco install nsis -y --no-progress
           $nsisPath = "${env:ProgramFiles(x86)}\NSIS"
+          $makeNsis = Get-Command makensis.exe -ErrorAction SilentlyContinue
+          if ($null -eq $makeNsis) {
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              Write-Host "正在安装 NSIS，第 $attempt/3 次尝试。"
+              choco install nsis -y --no-progress
+              $chocoExitCode = $LASTEXITCODE
+              if ($chocoExitCode -eq 0) {
+                break
+              }
+              if ($attempt -eq 3) {
+                throw "Chocolatey 安装 NSIS 失败，退出码：$chocoExitCode"
+              }
+              $retryDelay = 15 * $attempt
+              Write-Warning "Chocolatey 暂时不可用，$retryDelay 秒后重试。"
+              Start-Sleep -Seconds $retryDelay
+            }
+          }
+
           if (Test-Path -LiteralPath $nsisPath) {
             $env:Path = "$nsisPath;$env:Path"
             $nsisPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append

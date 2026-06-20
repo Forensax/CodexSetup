@@ -38,8 +38,10 @@ VIAddVersionKey "LegalCopyright" "${APP_PUBLISHER}"
 !include x64.nsh
 
 !define MUI_ABORTWARNING
-!define MUI_ICON "${PAYLOAD_DIR}\resources\icon.ico"
-!define MUI_UNICON "${PAYLOAD_DIR}\resources\icon.ico"
+!if /FileExists "${PAYLOAD_DIR}\resources\icon.ico"
+  !define MUI_ICON "${PAYLOAD_DIR}\resources\icon.ico"
+  !define MUI_UNICON "${PAYLOAD_DIR}\resources\icon.ico"
+!endif
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
@@ -64,14 +66,14 @@ Section "Codex" SEC01
   File /r "${PAYLOAD_DIR}\*.*"
 
   CreateDirectory "$SMPROGRAMS\Codex"
-  CreateShortCut "$SMPROGRAMS\Codex\Codex.lnk" "$INSTDIR\Codex.exe" "" "$INSTDIR\resources\icon.ico"
+  CreateShortCut "$SMPROGRAMS\Codex\Codex.lnk" "$INSTDIR\Codex.exe" "" "$INSTDIR\Codex.exe" 0
 
   WriteRegStr HKLM "${APP_REGKEY}" "InstallDir" "$INSTDIR"
   WriteRegStr HKLM "${APP_REGKEY}" "Version" "${APP_VERSION}"
 
   WriteRegStr HKLM "Software\Classes\codex" "" "URL:Codex Protocol"
   WriteRegStr HKLM "Software\Classes\codex" "URL Protocol" ""
-  WriteRegStr HKLM "Software\Classes\codex\DefaultIcon" "" "$INSTDIR\resources\icon.ico"
+  WriteRegStr HKLM "Software\Classes\codex\DefaultIcon" "" '"$INSTDIR\Codex.exe",0'
   WriteRegStr HKLM "Software\Classes\codex\shell\open\command" "" '"$INSTDIR\Codex.exe" "%1"'
 
   WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -80,7 +82,7 @@ Section "Codex" SEC01
   WriteRegStr HKLM "${APP_UNINSTALL_KEY}" "DisplayVersion" "${APP_VERSION}"
   WriteRegStr HKLM "${APP_UNINSTALL_KEY}" "Publisher" "${APP_PUBLISHER}"
   WriteRegStr HKLM "${APP_UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKLM "${APP_UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\resources\icon.ico"
+  WriteRegStr HKLM "${APP_UNINSTALL_KEY}" "DisplayIcon" '"$INSTDIR\Codex.exe",0'
   WriteRegStr HKLM "${APP_UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
   WriteRegStr HKLM "${APP_UNINSTALL_KEY}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
   WriteRegDWORD HKLM "${APP_UNINSTALL_KEY}" "NoModify" 1
