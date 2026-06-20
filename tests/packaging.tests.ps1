@@ -148,6 +148,7 @@ function Test-ReadmeContent {
     Assert-Contains $text 'zlib' 'README must document the zlib speed/size compression compromise'
     Assert-Contains $text 'Portable|portable' 'README must document the portable build artifact'
     Assert-Contains $text 'CodexPortable-x64-' 'README must name the portable ZIP artifact'
+    Assert-Contains $text '\u516c\u5171\u684c\u9762\u5feb\u6377\u65b9\u5f0f' 'README must document the all-users desktop shortcut'
 }
 
 function Test-PreparePayloadScript {
@@ -266,6 +267,7 @@ function Test-BuildInstallerScript {
     Assert-Contains $text '## \$warningEmoji \u6CE8\u610F' 'release notes must include the warning emoji section'
     Assert-Contains $text '\u5B89\u88C5\u7248' 'release notes must describe the installer in Chinese'
     Assert-Contains $text '\u4FBF\u643A\u7248' 'release notes must describe the portable build in Chinese'
+    Assert-Contains $text '\u516c\u5171\u684c\u9762\u5feb\u6377\u65b9\u5f0f' 'release notes must document the all-users desktop shortcut'
     Assert-Contains $text 'EXE SHA256: \$\(\$installerHash\.Hash\)' 'release notes must include the installer SHA256'
     Assert-Contains $text 'ZIP SHA256: \$\(\$portableHash\.Hash\)' 'release notes must include the portable ZIP SHA256'
     Assert-NotContains $text 'MSIX package identity' 'release notes must omit verbose MSIX metadata'
@@ -340,6 +342,9 @@ function Test-NsisScriptContent {
     Assert-Contains $text ([regex]::Escape('WriteRegStr HKLM "Software\Classes\codex" "URL Protocol" ""')) 'NSIS installer must register codex: URL protocol'
     Assert-Contains $text 'WriteUninstaller' 'NSIS installer must generate an uninstaller'
     Assert-Contains $text 'CreateShortCut\s+"\$SMPROGRAMS\\Codex\\Codex\.lnk"' 'NSIS installer must create an all-users Start Menu shortcut'
+    Assert-Contains $text 'CreateShortCut\s+"\$DESKTOP\\Codex\.lnk"[^\r\n]+"\$INSTDIR\\Codex\.ico"\s+0' 'NSIS installer must create an all-users desktop shortcut with the generated icon'
+    Assert-Contains $text 'CreateShortCut\s+"\$DESKTOP\\Codex\.lnk"[^\r\n]+"\$INSTDIR\\Codex\.exe"\s+0' 'NSIS installer must create an all-users desktop shortcut with the executable icon fallback'
+    Assert-Contains $text 'Delete\s+"\$DESKTOP\\Codex\.lnk"' 'NSIS uninstaller must remove the all-users desktop shortcut'
     Assert-Contains $text '!define\s+MUI_ICON\s+"\$\{INSTALLER_ICON\}"' 'NSIS installer UI must use the generated assets icon'
     Assert-Contains $text '!define\s+MUI_UNICON\s+"\$\{INSTALLER_ICON\}"' 'NSIS uninstaller UI must use the generated assets icon'
     Assert-Contains $text 'File\s+/oname=Codex\.ico\s+"\$\{INSTALLER_ICON\}"' 'NSIS installer must install the generated assets icon'
@@ -369,6 +374,9 @@ function Test-CiScriptGuard {
     Assert-Contains $text 'Start-Process' 'CI installer test script must install via Start-Process'
     Assert-Contains $text 'UninstallString' 'CI installer test script must verify the uninstall registry entry'
     Assert-Contains $text 'Software\\Classes\\codex' 'CI installer test script must verify codex: protocol registration'
+    Assert-Contains $text 'CommonDesktopDirectory' 'CI installer test script must resolve the all-users desktop directory'
+    Assert-Contains $text 'Test-Path\s+-LiteralPath\s+\$desktopShortcut' 'CI installer test script must verify the desktop shortcut after installation'
+    Assert-Contains $text 'Wait-Until\s+-Condition\s+\{\s*-not\s+\(Test-Path\s+-LiteralPath\s+\$desktopShortcut\)' 'CI installer test script must verify the desktop shortcut is removed after uninstall'
 
     foreach ($extension in @('\.csv', '\.tsv', '\.xls', '\.xlsm', '\.xlsx')) {
         Assert-Contains $text $extension "CI script must explicitly assert no file association for $extension"

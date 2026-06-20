@@ -167,7 +167,7 @@ $notes = @"
 - ZIP SHA256: $($portableHash.Hash)
 
 ## $warningEmoji 注意
-- 安装版需要管理员权限，会写入开始菜单、卸载项和 `codex:` 协议。
+- 安装版需要管理员权限，会创建开始菜单和公共桌面快捷方式，并写入卸载项和 `codex:` 协议。
 - 便携版解压即用，不写注册表、不创建快捷方式。
 - $signingText
 "@

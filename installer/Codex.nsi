@@ -71,8 +71,10 @@ Section "Codex" SEC01
   CreateDirectory "$SMPROGRAMS\Codex"
 !ifdef INSTALLER_ICON
   CreateShortCut "$SMPROGRAMS\Codex\Codex.lnk" "$INSTDIR\Codex.exe" "" "$INSTDIR\Codex.ico" 0
+  CreateShortCut "$DESKTOP\Codex.lnk" "$INSTDIR\Codex.exe" "" "$INSTDIR\Codex.ico" 0
 !else
   CreateShortCut "$SMPROGRAMS\Codex\Codex.lnk" "$INSTDIR\Codex.exe" "" "$INSTDIR\Codex.exe" 0
+  CreateShortCut "$DESKTOP\Codex.lnk" "$INSTDIR\Codex.exe" "" "$INSTDIR\Codex.exe" 0
 !endif
 
   WriteRegStr HKLM "${APP_REGKEY}" "InstallDir" "$INSTDIR"
@@ -110,6 +112,7 @@ Section "Uninstall"
 
   Delete "$SMPROGRAMS\Codex\Codex.lnk"
   RMDir "$SMPROGRAMS\Codex"
+  Delete "$DESKTOP\Codex.lnk"
 
   DeleteRegKey HKLM "${APP_PROTOCOL_KEY}"
   DeleteRegKey HKLM "${APP_UNINSTALL_KEY}"

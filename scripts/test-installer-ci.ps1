@@ -71,6 +71,8 @@ $codexExe = Join-Path $installDir 'Codex.exe'
 $uninstaller = Join-Path $installDir 'Uninstall.exe'
 $commonPrograms = [Environment]::GetFolderPath('CommonPrograms')
 $startMenuShortcut = Join-Path $commonPrograms 'Codex\Codex.lnk'
+$commonDesktop = [Environment]::GetFolderPath('CommonDesktopDirectory')
+$desktopShortcut = Join-Path $commonDesktop 'Codex.lnk'
 $uninstallKey = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Codex'
 $protocolKey = 'HKLM:\Software\Classes\codex'
 $protocolCommandKey = 'HKLM:\Software\Classes\codex\shell\open\command'
@@ -83,6 +85,7 @@ try {
 
     Assert-True (Test-Path -LiteralPath $codexExe) "Codex.exe was not installed at $codexExe"
     Assert-True (Test-Path -LiteralPath $startMenuShortcut) "Start Menu shortcut was not created at $startMenuShortcut"
+    Assert-True (Test-Path -LiteralPath $desktopShortcut) "Desktop shortcut was not created at $desktopShortcut"
     Assert-True (Test-Path -LiteralPath $uninstallKey) "Uninstall registry key was not created: $uninstallKey"
     Assert-True (Test-Path -LiteralPath $protocolKey) "codex: protocol registry key was not created: $protocolKey"
     Assert-True (Test-Path -LiteralPath $protocolCommandKey) "codex: protocol open command was not created: $protocolCommandKey"
@@ -105,6 +108,7 @@ try {
         }
 
         Wait-Until -Condition { -not (Test-Path -LiteralPath $installDir) } -FailureMessage "Install directory still exists after uninstall: $installDir"
+        Wait-Until -Condition { -not (Test-Path -LiteralPath $desktopShortcut) } -FailureMessage "Desktop shortcut still exists after uninstall: $desktopShortcut"
         Wait-Until -Condition { -not (Test-Path -LiteralPath $uninstallKey) } -FailureMessage "Uninstall registry key still exists after uninstall: $uninstallKey"
         Wait-Until -Condition { -not (Test-Path -LiteralPath $protocolKey) } -FailureMessage "codex: protocol registry key still exists after uninstall: $protocolKey"
     }
