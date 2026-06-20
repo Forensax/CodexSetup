@@ -55,6 +55,7 @@ function New-TestMsix {
     $root = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $root | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $root 'app/resources') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $root 'assets') -Force | Out-Null
 
     $manifest = @"
 <?xml version="1.0" encoding="utf-8"?>
@@ -81,7 +82,30 @@ function New-TestMsix {
 
     Set-Content -LiteralPath (Join-Path $root 'AppxManifest.xml') -Value $manifest -Encoding UTF8
     Set-Content -LiteralPath (Join-Path $root 'app/Codex.exe') -Value 'fake binary' -Encoding ASCII
-    Set-Content -LiteralPath (Join-Path $root 'app/resources/icon.ico') -Value 'fake icon' -Encoding ASCII
+    Set-Content -LiteralPath (Join-Path $root 'app/resources/app.asar') -Value 'fake payload' -Encoding ASCII
+
+    Add-Type -AssemblyName System.Drawing
+    foreach ($asset in @(
+        @{ Name = 'icon.png'; Size = 50 },
+        @{ Name = 'Square44x44Logo.targetsize-16_altform-unplated.png'; Size = 16 },
+        @{ Name = 'Square44x44Logo.targetsize-256_altform-unplated.png'; Size = 256 }
+    )) {
+        $bitmap = [System.Drawing.Bitmap]::new($asset.Size, $asset.Size)
+        try {
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            try {
+                $graphics.Clear([System.Drawing.Color]::FromArgb(255, 49, 67, 255))
+            } finally {
+                $graphics.Dispose()
+            }
+            $bitmap.Save(
+                (Join-Path $root "assets/$($asset.Name)"),
+                [System.Drawing.Imaging.ImageFormat]::Png
+            )
+        } finally {
+            $bitmap.Dispose()
+        }
+    }
 
     if (Test-Path -LiteralPath $Path) {
         Remove-Item -LiteralPath $Path -Force
@@ -98,6 +122,7 @@ function Test-RequiredFilesExist {
         'installer/Codex.nsi',
         'scripts/resolve-msix-url.ps1',
         'scripts/prepare-payload.ps1',
+        'scripts/new-installer-icon.ps1',
         'scripts/build-installer.ps1',
         'scripts/test-installer-ci.ps1',
         '.github/workflows/release.yml'
@@ -137,13 +162,17 @@ function Test-PreparePayloadScript {
     try {
         $msix = Join-Path $temp 'OpenAI.Codex_26.608.1337.0_x64__2p2nqsd0c76g0.Msix'
         $payload = Join-Path $temp 'payload'
+        $iconAssets = Join-Path $temp 'icon-assets'
         $metadataPath = Join-Path $temp 'metadata.json'
         New-TestMsix -Path $msix -PackageName 'OpenAI.Codex'
 
-        & $script -MsixPath $msix -OutputDir $payload -MetadataPath $metadataPath | Out-Null
+        & $script -MsixPath $msix -OutputDir $payload -IconAssetsDir $iconAssets -MetadataPath $metadataPath | Out-Null
 
         Assert-True (Test-Path -LiteralPath (Join-Path $payload 'Codex.exe')) 'prepare-payload must extract app/Codex.exe to the payload root'
-        Assert-True (Test-Path -LiteralPath (Join-Path $payload 'resources/icon.ico')) 'prepare-payload must preserve nested resources under payload root'
+        Assert-True (Test-Path -LiteralPath (Join-Path $payload 'resources/app.asar')) 'prepare-payload must preserve nested resources under payload root'
+        Assert-True (Test-Path -LiteralPath (Join-Path $iconAssets 'icon.png')) 'prepare-payload must extract the manifest icon from root assets'
+        Assert-True (Test-Path -LiteralPath (Join-Path $iconAssets 'Square44x44Logo.targetsize-256_altform-unplated.png')) 'prepare-payload must extract target-size app icons'
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $payload 'assets'))) 'prepare-payload must keep root icon assets outside the portable payload'
         Assert-True (Test-Path -LiteralPath $metadataPath) 'prepare-payload must write metadata JSON'
 
         $metadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
@@ -170,6 +199,47 @@ function Test-PreparePayloadScript {
     }
 }
 
+function Test-InstallerIconScript {
+    $script = Join-RepoPath 'scripts/new-installer-icon.ps1'
+    if (-not (Test-Path -LiteralPath $script)) {
+        Add-Failure 'scripts/new-installer-icon.ps1 must exist before icon generation can be tested'
+        return
+    }
+
+    $temp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $temp | Out-Null
+    try {
+        $msix = Join-Path $temp 'Codex.msix'
+        $payload = Join-Path $temp 'payload'
+        $iconAssets = Join-Path $temp 'icon-assets'
+        $iconPath = Join-Path $temp 'Codex.ico'
+        New-TestMsix -Path $msix -PackageName 'OpenAI.Codex'
+
+        & (Join-RepoPath 'scripts/prepare-payload.ps1') -MsixPath $msix -OutputDir $payload -IconAssetsDir $iconAssets | Out-Null
+        & $script -AssetsDir $iconAssets -OutputPath $iconPath | Out-Null
+
+        Assert-True (Test-Path -LiteralPath $iconPath) 'icon generator must create Codex.ico'
+        $bytes = [System.IO.File]::ReadAllBytes($iconPath)
+        Assert-True ($bytes.Length -gt 6) 'generated icon must contain an ICO header and image data'
+        Assert-True ([BitConverter]::ToUInt16($bytes, 0) -eq 0) 'generated icon reserved header must be zero'
+        Assert-True ([BitConverter]::ToUInt16($bytes, 2) -eq 1) 'generated icon type must be ICO'
+        $imageCount = [BitConverter]::ToUInt16($bytes, 4)
+        Assert-True ($imageCount -eq 3) 'generated icon must include all unique PNG sizes from assets'
+
+        $sizes = for ($index = 0; $index -lt $imageCount; $index++) {
+            $width = [int]$bytes[6 + ($index * 16)]
+            if ($width -eq 0) { 256 } else { $width }
+        }
+        Assert-True ($sizes -contains 16) 'generated icon must include a 16px image'
+        Assert-True ($sizes -contains 50) 'generated icon must include assets/icon.png'
+        Assert-True ($sizes -contains 256) 'generated icon must include a 256px image'
+    } finally {
+        if (Test-Path -LiteralPath $temp) {
+            Remove-Item -LiteralPath $temp -Recurse -Force
+        }
+    }
+}
+
 function Test-BuildInstallerScript {
     $script = Join-RepoPath 'scripts/build-installer.ps1'
     if (-not (Test-Path -LiteralPath $script)) {
@@ -180,6 +250,9 @@ function Test-BuildInstallerScript {
     $text = Get-Content -LiteralPath $script -Raw -Encoding UTF8
     Assert-Contains $text 'CodexPortable-x64-\$effectiveVersion\.zip' 'build script must create a versioned portable ZIP path'
     Assert-Contains $text 'CreateFromDirectory\(\s*\$payloadDir,\s*\$portablePath' 'build script must zip the extracted payload directory for portable builds'
+    Assert-Contains $text 'new-installer-icon\.ps1' 'build script must invoke the installer icon generator'
+    Assert-Contains $text '-IconAssetsDir\s+\$iconAssetsDir' 'build script must extract root icon assets separately from the payload'
+    Assert-Contains $text '/DINSTALLER_ICON=\$installerIconPath' 'build script must pass the generated assets icon to NSIS'
     Assert-Contains $text '\$portableHash\s*=\s*Get-FileHash' 'build script must calculate the portable ZIP SHA256'
     Assert-Contains $text '\$portableHash\.Hash\)\s+ \$\(Split-Path -Leaf \$portablePath\)' 'checksums.txt must include the portable ZIP hash'
     Assert-Contains $text 'PortablePath\s*=\s*\$portablePath' 'build script result must expose PortablePath to the workflow'
@@ -267,11 +340,13 @@ function Test-NsisScriptContent {
     Assert-Contains $text ([regex]::Escape('WriteRegStr HKLM "Software\Classes\codex" "URL Protocol" ""')) 'NSIS installer must register codex: URL protocol'
     Assert-Contains $text 'WriteUninstaller' 'NSIS installer must generate an uninstaller'
     Assert-Contains $text 'CreateShortCut\s+"\$SMPROGRAMS\\Codex\\Codex\.lnk"' 'NSIS installer must create an all-users Start Menu shortcut'
-    Assert-Contains $text '!if\s+/FileExists\s+"\$\{PAYLOAD_DIR\}\\resources\\icon\.ico"' 'NSIS installer must treat resources/icon.ico as optional'
-    Assert-Contains $text 'CreateShortCut[^\r\n]+"\$INSTDIR\\Codex\.exe"\s+0' 'Start Menu shortcut must use the Codex executable icon as a stable fallback'
-    Assert-Contains $text 'DefaultIcon[^\r\n]+Codex\.exe[^\r\n]*,0' 'codex protocol must use the Codex executable icon'
-    Assert-Contains $text 'DisplayIcon[^\r\n]+Codex\.exe[^\r\n]*,0' 'uninstall entry must use the Codex executable icon'
-    Assert-NotContains $text 'CreateShortCut[^\r\n]+resources\\icon\.ico' 'Start Menu shortcut must not require the optional resources/icon.ico file'
+    Assert-Contains $text '!define\s+MUI_ICON\s+"\$\{INSTALLER_ICON\}"' 'NSIS installer UI must use the generated assets icon'
+    Assert-Contains $text '!define\s+MUI_UNICON\s+"\$\{INSTALLER_ICON\}"' 'NSIS uninstaller UI must use the generated assets icon'
+    Assert-Contains $text 'File\s+/oname=Codex\.ico\s+"\$\{INSTALLER_ICON\}"' 'NSIS installer must install the generated assets icon'
+    Assert-Contains $text 'CreateShortCut[^\r\n]+"\$INSTDIR\\Codex\.ico"\s+0' 'Start Menu shortcut must use the generated assets icon'
+    Assert-Contains $text 'DefaultIcon[^\r\n]+Codex\.ico' 'codex protocol must use the generated assets icon'
+    Assert-Contains $text 'DisplayIcon[^\r\n]+Codex\.ico' 'uninstall entry must use the generated assets icon'
+    Assert-NotContains $text 'resources\\icon\.ico' 'NSIS installer must not depend on the removed app/resources/icon.ico file'
     Assert-Contains $text '!insertmacro\s+MUI_LANGUAGE\s+"SimpChinese"' 'NSIS installer must use Simplified Chinese UI language'
     Assert-Contains $text '(?m)^\s*SetCompressor\s+zlib\s*$' 'NSIS installer must use zlib as the speed/size compression compromise'
     Assert-NotContains $text '(?m)^\s*SetCompressor\s+/SOLID\s+lzma\s*$' 'NSIS installer must not use slow solid LZMA compression'
@@ -338,6 +413,7 @@ Test-RequiredFilesExist
 Test-ReadmeContent
 Test-BuildInstallerScript
 Test-PreparePayloadScript
+Test-InstallerIconScript
 Test-ResolveMsixUrlParser
 Test-NsisScriptContent
 Test-CiScriptGuard

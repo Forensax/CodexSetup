@@ -38,9 +38,9 @@ VIAddVersionKey "LegalCopyright" "${APP_PUBLISHER}"
 !include x64.nsh
 
 !define MUI_ABORTWARNING
-!if /FileExists "${PAYLOAD_DIR}\resources\icon.ico"
-  !define MUI_ICON "${PAYLOAD_DIR}\resources\icon.ico"
-  !define MUI_UNICON "${PAYLOAD_DIR}\resources\icon.ico"
+!ifdef INSTALLER_ICON
+  !define MUI_ICON "${INSTALLER_ICON}"
+  !define MUI_UNICON "${INSTALLER_ICON}"
 !endif
 
 !insertmacro MUI_PAGE_WELCOME
@@ -64,16 +64,27 @@ Section "Codex" SEC01
 
   SetOutPath "$INSTDIR"
   File /r "${PAYLOAD_DIR}\*.*"
+!ifdef INSTALLER_ICON
+  File /oname=Codex.ico "${INSTALLER_ICON}"
+!endif
 
   CreateDirectory "$SMPROGRAMS\Codex"
+!ifdef INSTALLER_ICON
+  CreateShortCut "$SMPROGRAMS\Codex\Codex.lnk" "$INSTDIR\Codex.exe" "" "$INSTDIR\Codex.ico" 0
+!else
   CreateShortCut "$SMPROGRAMS\Codex\Codex.lnk" "$INSTDIR\Codex.exe" "" "$INSTDIR\Codex.exe" 0
+!endif
 
   WriteRegStr HKLM "${APP_REGKEY}" "InstallDir" "$INSTDIR"
   WriteRegStr HKLM "${APP_REGKEY}" "Version" "${APP_VERSION}"
 
   WriteRegStr HKLM "Software\Classes\codex" "" "URL:Codex Protocol"
   WriteRegStr HKLM "Software\Classes\codex" "URL Protocol" ""
+!ifdef INSTALLER_ICON
+  WriteRegStr HKLM "Software\Classes\codex\DefaultIcon" "" '"$INSTDIR\Codex.ico",0'
+!else
   WriteRegStr HKLM "Software\Classes\codex\DefaultIcon" "" '"$INSTDIR\Codex.exe",0'
+!endif
   WriteRegStr HKLM "Software\Classes\codex\shell\open\command" "" '"$INSTDIR\Codex.exe" "%1"'
 
   WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -82,7 +93,11 @@ Section "Codex" SEC01
   WriteRegStr HKLM "${APP_UNINSTALL_KEY}" "DisplayVersion" "${APP_VERSION}"
   WriteRegStr HKLM "${APP_UNINSTALL_KEY}" "Publisher" "${APP_PUBLISHER}"
   WriteRegStr HKLM "${APP_UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
+!ifdef INSTALLER_ICON
+  WriteRegStr HKLM "${APP_UNINSTALL_KEY}" "DisplayIcon" '"$INSTDIR\Codex.ico",0'
+!else
   WriteRegStr HKLM "${APP_UNINSTALL_KEY}" "DisplayIcon" '"$INSTDIR\Codex.exe",0'
+!endif
   WriteRegStr HKLM "${APP_UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
   WriteRegStr HKLM "${APP_UNINSTALL_KEY}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
   WriteRegDWORD HKLM "${APP_UNINSTALL_KEY}" "NoModify" 1

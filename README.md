@@ -15,6 +15,7 @@
 - 安装器类型：传统 NSIS EXE。
 - 安装范围：全机器安装，需要管理员权限。
 - 默认安装目录：`%ProgramFiles%\Codex`。
+- 安装器图标：从 MSIX 根目录 `assets/` 中的多尺寸应用图标自动生成。
 - 注册内容：开始菜单快捷方式、卸载项、`codex:` 协议。
 - Portable ZIP：解压后直接运行 `Codex.exe`，不写注册表、不创建快捷方式、不注册 `codex:` 协议。
 - 不注册 `.csv`、`.tsv`、`.xls`、`.xlsm`、`.xlsx` 文件关联。

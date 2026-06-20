@@ -6,6 +6,8 @@ param(
     [Parameter(Mandatory)]
     [string]$OutputDir,
 
+    [string]$IconAssetsDir,
+
     [string]$MetadataPath
 )
 
@@ -73,11 +75,23 @@ function Select-ManifestNode {
 $resolvedMsix = Resolve-Path -LiteralPath $MsixPath
 $resolvedMsixPath = $resolvedMsix.ProviderPath
 $outputFullPath = Assert-SafeOutputDirectory $OutputDir
+$iconAssetsFullPath = $null
+
+if (-not [string]::IsNullOrWhiteSpace($IconAssetsDir)) {
+    $iconAssetsFullPath = Assert-SafeOutputDirectory $IconAssetsDir
+}
 
 if (Test-Path -LiteralPath $outputFullPath) {
     Remove-Item -LiteralPath $outputFullPath -Recurse -Force
 }
 New-Item -ItemType Directory -Path $outputFullPath -Force | Out-Null
+
+if ($null -ne $iconAssetsFullPath) {
+    if (Test-Path -LiteralPath $iconAssetsFullPath) {
+        Remove-Item -LiteralPath $iconAssetsFullPath -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $iconAssetsFullPath -Force | Out-Null
+}
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
@@ -118,20 +132,32 @@ try {
 
     foreach ($entry in $zip.Entries) {
         $normalizedEntryName = $entry.FullName.Replace('\', '/')
-        if (-not $normalizedEntryName.StartsWith('app/', [System.StringComparison]::OrdinalIgnoreCase)) {
-            continue
-        }
         if ($normalizedEntryName.EndsWith('/')) {
             continue
         }
 
-        $relative = $normalizedEntryName.Substring(4).Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+        $targetRoot = $null
+        $relative = $null
+        if ($normalizedEntryName.StartsWith('app/', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $targetRoot = $outputFullPath
+            $relative = $normalizedEntryName.Substring(4).Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+        } elseif (
+            $null -ne $iconAssetsFullPath -and
+            $normalizedEntryName.StartsWith('assets/', [System.StringComparison]::OrdinalIgnoreCase) -and
+            $normalizedEntryName.EndsWith('.png', [System.StringComparison]::OrdinalIgnoreCase)
+        ) {
+            $targetRoot = $iconAssetsFullPath
+            $relative = $normalizedEntryName.Substring(7).Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+        } else {
+            continue
+        }
+
         if ([string]::IsNullOrWhiteSpace($relative)) {
             continue
         }
 
-        $targetPath = Get-FullPath (Join-Path $outputFullPath $relative)
-        $outputPrefix = $outputFullPath.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+        $targetPath = Get-FullPath (Join-Path $targetRoot $relative)
+        $outputPrefix = $targetRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
         if (-not $targetPath.StartsWith($outputPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
             throw "Blocked unsafe zip entry path: $($entry.FullName)"
         }
@@ -173,6 +199,7 @@ $metadata = [PSCustomObject]@{
     SignatureStatus        = [string]$signature.Status
     SignatureStatusMessage = [string]$signature.StatusMessage
     PayloadDir             = $outputFullPath
+    IconAssetsDir          = $iconAssetsFullPath
     GeneratedAtUtc         = [DateTime]::UtcNow.ToString('o')
 }
 

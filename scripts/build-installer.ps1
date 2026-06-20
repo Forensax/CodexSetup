@@ -15,6 +15,7 @@ $ErrorActionPreference = 'Stop'
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $prepareScript = Join-Path $PSScriptRoot 'prepare-payload.ps1'
+$iconScript = Join-Path $PSScriptRoot 'new-installer-icon.ps1'
 $nsisScript = Join-Path $RepoRoot 'installer/Codex.nsi'
 
 function Get-FullPath {
@@ -53,6 +54,9 @@ if (-not (Test-Path -LiteralPath $prepareScript)) {
 if (-not (Test-Path -LiteralPath $nsisScript)) {
     throw "Missing NSIS script: $nsisScript"
 }
+if (-not (Test-Path -LiteralPath $iconScript)) {
+    throw "Missing installer icon script: $iconScript"
+}
 
 $resolvedMsix = (Resolve-Path -LiteralPath $MsixPath).ProviderPath
 $outFullPath = Get-FullPath $OutDir
@@ -64,12 +68,22 @@ if (-not [string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) {
     $buildRoot = Join-Path $RepoRoot '.build'
 }
 $payloadDir = Join-Path $buildRoot 'payload'
+$iconAssetsDir = Join-Path $buildRoot 'icon-assets'
+$installerIconPath = Join-Path $buildRoot 'Codex.ico'
 $metadataPath = Join-Path $buildRoot 'metadata.json'
 
 New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $outFullPath -Force | Out-Null
 
-$metadata = & $prepareScript -MsixPath $resolvedMsix -OutputDir $payloadDir -MetadataPath $metadataPath
+$metadata = & $prepareScript -MsixPath $resolvedMsix -OutputDir $payloadDir -IconAssetsDir $iconAssetsDir -MetadataPath $metadataPath
+
+$hasInstallerIcon = $false
+try {
+    & $iconScript -AssetsDir $iconAssetsDir -OutputPath $installerIconPath | Out-Null
+    $hasInstallerIcon = Test-Path -LiteralPath $installerIconPath
+} catch {
+    Write-Warning "Could not generate Codex.ico from MSIX assets. NSIS will use Codex.exe icons. $($_.Exception.Message)"
+}
 
 if (-not [string]::IsNullOrWhiteSpace($Version) -and $metadata.Version -ne $Version) {
     throw "Expected Codex version '$Version' but MSIX manifest contains '$($metadata.Version)'."
@@ -93,9 +107,12 @@ $makensisArgs = @(
     '/WX',
     "/DAPP_VERSION=$effectiveVersion",
     "/DPAYLOAD_DIR=$payloadDir",
-    "/DOUTPUT_EXE=$installerPath",
-    $nsisScript
+    "/DOUTPUT_EXE=$installerPath"
 )
+if ($hasInstallerIcon) {
+    $makensisArgs += "/DINSTALLER_ICON=$installerIconPath"
+}
+$makensisArgs += $nsisScript
 
 & $makensis @makensisArgs
 if ($LASTEXITCODE -ne 0) {
